@@ -14,3 +14,6 @@ texture = ExtResource("1_uvnfx")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=213527492]
 shape = SubResource("CapsuleShape2D_b2vd7")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1056848617]
+position_smoothing_enabled = true
