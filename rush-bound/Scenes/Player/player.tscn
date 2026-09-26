@@ -4,8 +4,10 @@
 [ext_resource type="Texture2D" uid="uid://dm6qmchcud24u" path="res://icon.svg" id="1_uvnfx"]
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_b2vd7"]
+radius = 9.0
 
 [node name="Player" type="CharacterBody2D" unique_id=361785722]
+collision_mask = 2
 script = ExtResource("1_a3d8c")
 
 [node name="Sprite2D" type="Sprite2D" parent="." unique_id=602217972]
@@ -16,4 +18,5 @@ texture = ExtResource("1_uvnfx")
 shape = SubResource("CapsuleShape2D_b2vd7")
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1056848617]
+zoom = Vector2(1.5, 1.5)
 position_smoothing_enabled = true
