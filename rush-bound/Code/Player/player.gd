@@ -25,10 +25,7 @@ func _physics_process(_delta: float) -> void:
 	else:
 		on_wall = false
 	
-	if direction < 0:
-		wall_checker.target_position.x = -15
-	elif direction > 0:
-		wall_checker.target_position.x = 15
+	
 	
 	match state:
 		
@@ -40,6 +37,10 @@ func _physics_process(_delta: float) -> void:
 			if on_wall:
 				state = STATES.WALL
 			
+			if direction < 0:
+				wall_checker.target_position.x = -15
+			elif direction > 0:
+				wall_checker.target_position.x = 15
 			velocity.y += gravity
 			
 			if direction:
@@ -59,6 +60,12 @@ func _physics_process(_delta: float) -> void:
 			if !is_on_floor():
 				state = STATES.AIR
 			
+			if direction < 0:
+				wall_checker.target_position.x = -15
+			elif direction > 0:
+				wall_checker.target_position.x = 15
+			
+			velocity.y += gravity
 			
 			if direction:
 				if dashing:
@@ -81,6 +88,10 @@ func _physics_process(_delta: float) -> void:
 				state = STATES.AIR
 			
 			velocity.y += wall_gravity
+			
+			if Input.is_action_just_pressed("Jump"):
+				velocity.y = jumpforce
+				velocity.x = jumpforce * -1
 	
 	
 	move_and_slide()
