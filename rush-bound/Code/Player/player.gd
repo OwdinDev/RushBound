@@ -1,101 +1,145 @@
 extends CharacterBody2D
 
-var speed: float = 150.0
-var dash_speed: float = 600.0
-var accel: float = 10.0
-var jumpforce: float = -400
-var health: float = speed
-var gravity: float = 20.0
-var wall_gravity: float = 2.0
+enum State { AIR, FLOOR, WALL }
 
-var on_wall: bool = false
-var dashing: bool = false
+const WALK_SPEED: float = 120.0
+const MAX_SPEED: float = 600.0
+const DASH_SPEED: float = 550.0
+
+const FLOOR_ACCEL: float = 900.0
+const AIR_ACCEL: float = 450.0
+const GROUND_FRICTION: float = 700.0
+const AIR_FRICTION: float = 20.0
+const TURN_BRAKE: float = 1400.0
+
+const MOMENTUM_GAIN: float = 150.0
+const MOMENTUM_DECAY: float = 300.0
+
+
+const GRAVITY: float = 1200.0
+const WALL_SLIDE_GRAVITY: float = 120.0
+const WALL_SLIDE_MAX: float = 150.0
+const JUMP_VELOCITY: float = -400.0
+const JUMP_CUT: float = 0.5
+const WALL_JUMP_MIN_PUSH: float = 400.0
 
 @onready var wall_checker: RayCast2D = $WallChecker
+@onready var dash_timer: Timer = $DashTimer
 
-var state = STATES.AIR
-enum STATES {AIR=1, FLOOR, WALL}
+var state: State = State.AIR
+var top_speed: float = WALK_SPEED
+var facing: float = 1.0
+var on_wall: bool = false
+var dashing: bool = false
+var can_dash: bool = true
 
-func _physics_process(_delta: float) -> void:
+
+func _physics_process(delta: float) -> void:
+	var direction: float = Input.get_axis("Left", "Right")
 	
-	var direction = Input.get_axis("Left", "Right")
+	if direction != 0.0:
+		facing = sign(direction)
+		wall_checker.target_position.x = 15.0 * facing
+		wall_checker.force_raycast_update()
+	on_wall = wall_checker.is_colliding()
 	
-	if wall_checker.is_colliding():
-		on_wall = true
-	else:
-		on_wall = false
 	
-	
+	if dashing:
+		move_and_slide()
+		return
 	
 	match state:
-		
-		STATES.AIR:
-			
-			if is_on_floor():
-				state = STATES.FLOOR
-			
-			if on_wall:
-				state = STATES.WALL
-			
-			if direction < 0:
-				wall_checker.target_position.x = -15
-			elif direction > 0:
-				wall_checker.target_position.x = 15
-			velocity.y += gravity
-			
-			if direction:
-				if dashing:
-					velocity.x = direction * dash_speed
-				else:
-					velocity.x = direction * speed
-			else:
-				velocity.x = move_toward(velocity.x, 0, accel)
-			
-			if Input.is_action_just_pressed("Dash"):
-				dashing = true
-				$DashTimer.start()
-			
-		STATES.FLOOR:
-			
-			if !is_on_floor():
-				state = STATES.AIR
-			
-			if direction < 0:
-				wall_checker.target_position.x = -15
-			elif direction > 0:
-				wall_checker.target_position.x = 15
-			
-			velocity.y += gravity
-			
-			if direction:
-				if dashing:
-					velocity.x = direction * dash_speed
-				else:
-					velocity.x = direction * speed
-			else:
-				velocity.x = move_toward(velocity.x, 0, accel)
-			
-			if Input.is_action_just_pressed("Dash"):
-				dashing = true
-				$DashTimer.start()
-			
-			if Input.is_action_just_pressed("Jump"):
-				velocity.y = jumpforce
-			
-		STATES.WALL:
-			
-			if !on_wall:
-				state = STATES.AIR
-			
-			velocity.y += wall_gravity
-			
-			if Input.is_action_just_pressed("Jump"):
-				velocity.y = jumpforce
-				velocity.x = jumpforce * -1
+		State.AIR:
+			air_state(direction, delta)
+		State.FLOOR:
+			floor_state(direction, delta)
+		State.WALL:
+			wall_state(delta)
 	
-	
+	velocity.x = clamp(velocity.x, -MAX_SPEED, MAX_SPEED)
 	move_and_slide()
-	print(state)
+
+
+func air_state(direction: float, delta: float) -> void:
+	if is_on_floor():
+		state = State.FLOOR
+		can_dash = true
+		return
+	
+	if on_wall and velocity.y > 0.0 and direction == facing:
+		state = State.WALL
+		can_dash = true
+		return
+	
+	velocity.y += GRAVITY * delta
+	
+	if Input.is_action_just_released("Jump") and velocity.y < 0.0:
+		velocity.y *= JUMP_CUT
+	
+	apply_horizontal(direction, AIR_ACCEL, AIR_FRICTION, delta)
+	dash(direction)
+
+
+func floor_state(direction: float, delta: float) -> void:
+	if not is_on_floor():
+		state = State.AIR
+		return
+	
+	velocity.y += GRAVITY * delta
+	update_top_speed(direction, delta)
+	apply_horizontal(direction, FLOOR_ACCEL, GROUND_FRICTION, delta)
+	
+	if Input.is_action_just_pressed("Jump"):
+		velocity.y = JUMP_VELOCITY
+		state = State.AIR
+		return
+	
+	dash(direction)
+
+
+func wall_state(delta: float) -> void:
+	if is_on_floor():
+		state = State.FLOOR
+		return
+	if not on_wall:
+		state = State.AIR
+		return
+	
+	velocity.y = min(velocity.y + WALL_SLIDE_GRAVITY * delta, WALL_SLIDE_MAX)
+	
+	if Input.is_action_just_pressed("Jump"):
+		var push_dir: float = sign(wall_checker.get_collision_normal().x)
+		velocity.y = JUMP_VELOCITY
+		velocity.x = push_dir * max(top_speed, WALL_JUMP_MIN_PUSH)
+		facing = push_dir
+		state = State.AIR
+
+
+func update_top_speed(direction: float, delta: float) -> void:
+	var running_forward: bool = direction != 0.0 and (velocity.x == 0.0 or sign(velocity.x) == direction)
+	if running_forward:
+		top_speed = move_toward(top_speed, MAX_SPEED, MOMENTUM_GAIN * delta)
+	else:
+		top_speed = move_toward(top_speed, WALK_SPEED, MOMENTUM_DECAY * delta)
+
+
+func apply_horizontal(direction: float, accel: float, friction: float, delta: float) -> void:
+	if direction == 0.0:
+		velocity.x = move_toward(velocity.x, 0.0, friction * delta)
+	elif sign(velocity.x) == -direction:
+		velocity.x = move_toward(velocity.x, direction * top_speed, TURN_BRAKE * delta)
+	elif abs(velocity.x) < top_speed:
+		velocity.x = move_toward(velocity.x, direction * top_speed, accel * delta)
+
+
+func dash(direction: float) -> void:
+	if Input.is_action_just_pressed("Dash") and can_dash:
+		dashing = true
+		can_dash = false
+		var dash_dir: float = direction if direction != 0.0 else facing
+		velocity = Vector2(dash_dir * DASH_SPEED, 0.0)
+		top_speed = max(top_speed, DASH_SPEED * 0.75)
+		dash_timer.start()
 
 
 func _on_dash_timer_timeout() -> void:
