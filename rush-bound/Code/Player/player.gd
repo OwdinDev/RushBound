@@ -23,6 +23,15 @@ const JUMP_VELOCITY: float = -400.0
 const JUMP_CUT: float = 0.5
 const WALL_JUMP_MIN_PUSH: float = 400.0
 
+const BOUNCE_MIN_SPEED: float = 400.0
+
+const BOUNCE_RETENTION_MIN: float = 0.70
+const BOUNCE_RETENTION_MAX: float = 0.95
+const BOUNCE_POP_MIN: float = -100.0
+const BOUNCE_POP_MAX: float = -250.0
+const BOUNCE_LOCK_MIN: float = 0.10
+const BOUNCE_LOCK_MAX: float = 0.30
+
 @onready var wall_checker: RayCast2D = $WallChecker
 @onready var dash_timer: Timer = $DashTimer
 
@@ -32,6 +41,7 @@ var facing: float = 1.0
 var on_wall: bool = false
 var dashing: bool = false
 var can_dash: bool = true
+var bounce_lock: float = 0.0
 
 
 func _physics_process(delta: float) -> void:
@@ -42,10 +52,10 @@ func _physics_process(delta: float) -> void:
 		wall_checker.target_position.x = 15.0 * facing
 		wall_checker.force_raycast_update()
 	on_wall = wall_checker.is_colliding()
-	
+	bounce_lock = max(bounce_lock - delta, 0.0)
 	
 	if dashing:
-		move_and_slide()
+		move_and_bounce()
 		return
 	
 	match state:
@@ -57,7 +67,7 @@ func _physics_process(delta: float) -> void:
 			wall_state(delta)
 	
 	velocity.x = clamp(velocity.x, -MAX_SPEED, MAX_SPEED)
-	move_and_slide()
+	move_and_bounce()
 
 
 func air_state(direction: float, delta: float) -> void:
@@ -66,7 +76,8 @@ func air_state(direction: float, delta: float) -> void:
 		can_dash = true
 		return
 	
-	if on_wall and velocity.y > 0.0 and direction == facing:
+	if on_wall and velocity.y > 0.0 and direction == facing \
+			and abs(velocity.x) < BOUNCE_MIN_SPEED and bounce_lock <= 0.0:
 		state = State.WALL
 		can_dash = true
 		return
@@ -124,6 +135,9 @@ func update_top_speed(direction: float, delta: float) -> void:
 
 
 func apply_horizontal(direction: float, accel: float, friction: float, delta: float) -> void:
+	if bounce_lock > 0.0:
+		return
+	
 	if direction == 0.0:
 		velocity.x = move_toward(velocity.x, 0.0, friction * delta)
 	elif sign(velocity.x) == -direction:
@@ -140,6 +154,32 @@ func dash(direction: float) -> void:
 		velocity = Vector2(dash_dir * DASH_SPEED, 0.0)
 		top_speed = max(top_speed, DASH_SPEED * 0.75)
 		dash_timer.start()
+
+
+func move_and_bounce() -> void:
+	var pre_vx: float = velocity.x
+	move_and_slide()
+	
+	if not is_on_wall() or abs(pre_vx) < BOUNCE_MIN_SPEED:
+		return
+	
+	var normal_x: float = get_wall_normal().x
+	if sign(pre_vx) != -sign(normal_x):
+		return
+	
+	var t: float = clamp(inverse_lerp(BOUNCE_MIN_SPEED, MAX_SPEED, abs(pre_vx)), 0.0, 1.0)
+	var retention: float = lerp(BOUNCE_RETENTION_MIN, BOUNCE_RETENTION_MAX, t)
+	var pop: float = lerp(BOUNCE_POP_MIN, BOUNCE_POP_MAX, t)
+	
+	velocity.x = sign(normal_x) * abs(pre_vx) * retention
+	velocity.y = min(velocity.y, pop)
+	facing = sign(normal_x)
+	wall_checker.target_position.x = 15.0 * facing
+	bounce_lock = lerp(BOUNCE_LOCK_MIN, BOUNCE_LOCK_MAX, t)
+	state = State.AIR
+	can_dash = true
+	dashing = false
+	dash_timer.stop()
 
 
 func _on_dash_timer_timeout() -> void:
